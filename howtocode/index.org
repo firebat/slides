@@ -1,0 +1,362 @@
+#+TITLE: 如何编写有效的代码
+#+SUBTITLE: 常见问题及技巧
+#+AUTHOR: zhongyuan.zhang
+#+OPTIONS: ':nil *:t -:t ::t <:t H:3 \n:nil ^:t arch:headline
+#+OPTIONS: author:t c:nil creator:comment d:(not "LOGBOOK") date:t
+#+OPTIONS: e:t email:nil f:t inline:t num:nil p:nil pri:nil stat:t
+#+OPTIONS: tags:t tasks:t tex:t timestamp:t toc:nil todo:t |:t
+
+#+ICON: images/org-icon.png
+
+* 什么是有效的代码
+:PROPERTIES:
+:SLIDE:    segue dark quote
+:ASIDE:    right bottom
+:ARTICLE:  flexbox vleft auto-fadein
+:END:
+
+* 特征
+- 无bug
+- 结构清晰
+- 简洁
+- 高性能
+
+* 编码宗旨
+- 复用, 测试
+- 接口, 组合
+- 代码布局
+- 空间, 时间, 无状态
+
+* 禁忌
+- 禁用util
+- 慎用public
+- 适当final
+  
+* 面向接口编程
+- 描述主业务行为, 定义接口类, 异常类
+- 内部模块分包，定义资源访问, 请求处理, 结果包装 等接口
+- 接口方法不要public
+- 关注方法定义, 参数/返回值/异常, 同步/异步
+- 减法!
+
+* 如何设计接口
+- 更通用的输入类型
+- 异常处理错误
+  
+#+BEGIN_SRC java
+public interface XXX {
+
+    ReturnType handle(File file);
+    
+    ReturnType handle(InputStream is) throw XXException;
+    
+    Future<ReturnType> handle(InputStream is); // 何时关闭Stream
+
+    Future<ReturnType> handle(Reader reader);
+}
+#+END_SRC
+
+* 如何使用 / 设计异常
+- UncheckedException 输入方引起的异常 IllegalArgument
+- CheckedException 内部状态导致 FileNotFound, IO
+  
+#+BEGIN_SRC java
+public enum ErrorCode {
+
+    ERR_XXX(n, "message={}");
+
+    private final int code;
+    private final String pattern;
+
+    public String message(Object... options) {
+        return options == null || options.length == 0
+            ? pattern
+            : MessageFormat.format(pattern, options);
+    }
+}
+#+END_SRC
+
+* 
+#+BEGIN_SRC java
+
+public class CodeException extends RuntimeExceptiono implements CodeMessage {
+
+    private final ErrorCode code;
+
+    public CodeException(ErrorCode code, Object... options) {
+        this(code, (Throwable) null, options);
+    }
+
+    public CodeException(ErrorCode code Throwable cause, Object... options) {
+        super(code.message(options), cause);
+        this.code = code;
+    }
+
+    public int getStatus() {
+        return code.code();
+    }
+}
+
+#+END_SRC
+
+* 代码写的越多, 水平越高 ?
+:PROPERTIES:
+:SLIDE:    segue dark quote
+:ASIDE:    right bottom
+:ARTICLE:  flexbox vleft auto-fadein
+:END:
+
+* Java8特性越多, 水平越高 ?
+:PROPERTIES:
+:SLIDE:    segue dark quote
+:ASIDE:    right bottom
+:ARTICLE:  flexbox vleft auto-fadein
+:END:
+
+* 如何实现接口
+- 共有资源, 逻辑提取到父类
+
+#+BEGIN_SRC java
+abstract class AbstractXXX {  // -public -interface
+    protected final Logger logger = LoggerFactory.getLogger(getClass()); // +final
+
+    public ReturnType sharedMethodOfInterface() {
+        ...
+        methodOfInterface(param);
+    }
+    
+    public abstract ReturnType methodOfInterface(ParamType param);
+
+    protected ... sharedUtil(...) { // -util
+    }
+}
+#+END_SRC
+
+* 如何实现接口
+#+BEGIN_SRC java
+public class DefaultXXX extends AbstractXXX implements XXX {
+
+    @Override
+    public ReturnType methodOfInterface(ParamType param) {
+        logger.debug("params={}", param);
+        ...
+    }
+}
+
+// 给别人一条活路
+public class MyXXX extends DefaultXXX {
+
+    @Override
+    protected ... sharedUtil(...) {
+    }
+}
+#+END_SRC
+
+* 如何布局代码  
+#+BEGIN_SRC java
+public class XXX {
+
+    private static final ... = ...;
+    private final ;
+    
+    protected ... = ...;
+    
+    public xxx abc(yyy) {
+        ...
+    }
+
+    private ... xxx(..) {
+    }
+}
+#+END_SRC
+
+* 如何布局代码
+#+BEGIN_SRC java
+
+    public xxx abc(yyy) {
+    
+        Preconditions.checkNotNull(yyy, "");
+
+        try {
+            ...
+        } catch(XException e) {
+            throw new RuntimeException(e);
+        } catch(YException e) {
+            logger.error("xx", e);
+            QMonitor.record("XXXFail");
+            return error;
+        }
+
+        // last line;
+    }
+#+END_SRC
+
+* ELSE 有罪
+#+BEGIN_SRC java
+
+    if (name != null {            // if (name == null) {
+        jdbc.query("xxxx", name); //     return default_value;
+    } else {                      // }
+        return default_value;     // return jdbc.query("xxx", name);
+    }
+
+    // 
+    if (count == 1) {             // return count == 1
+        return true;
+    } else {
+        return false;
+    }
+#+END_SRC
+
+* 空间 / 时间
+#+BEGIN_SRC java
+    Map fixedSize = new HashMap(size);
+    Map autoExtend = new LinkedHashMap();
+    Map empty = Collections.emptyMap();
+    Map constant = Collections.unmodifiableMap(map);
+    ConcurrentMap concurrent = new ConcurrentHashMap();
+
+    // List list =
+    // Set set =
+    concurrent.putIfAbsent()
+#+END_SRC
+
+* 力荐 wiki:guava
+#+BEGIN_SRC java
+final Joiner _ = Joiner.on('_');
+final Splitter comma = Splitter.on(',');
+String name = _.join("John", "Constantine");
+Iterator<String> = comma.split("xxx,yyy");
+List<String> = comma.splitToList("xxx,yyy");
+
+Preconditions.checkNotNull();
+LoadingCache<Key, Value) cache = CacheBuilder.newBuilder().maxCapacity().build(new CacheLoader() {
+    public Value load(Key key) throws {
+        // create value;    
+    }
+});
+
+final HashFunction md5 = Hashing.md5();
+String hash = md5.hashString("xx", Charsets.UTF_8).toString()/.asInt();
+String path = Optional.fromNullable(map.get("path").or("/tmp");
+#+END_SRC
+
+* 日志 (接口)
+#+BEGIN_SRC java
+    // log4j
+    log.debug("x=" + x + ", y=" + y);
+    
+    if (log.isDebugEnalbe()) { // 避免字符串运算
+        StringBuilder info = new StringBuilder("x=").append(x).append(", y=").append(y);
+        log.info(into.toString());
+    }
+
+    // slf4j
+    log.debug("x={}, y={}", x, y);
+#+END_SRC
+
+* 日志 (实现)
+- jcl-over-slf4j   替换Java Commons Logging
+- log4j-over-slf4j 替换Log4j
+- slf4j-log4jxx    使用log4j作为slf4j-api输出
+- logback-classic  使用logback作为slf4j-api输出
+
+* 线程安全  
+- SimpleDateFormat / FastDateFormat
+- ObjectMapper / JsonMapper
+
+* 技巧 - Builder代替大量构造方法
+#+BEGIN_SRC java
+public class XXXBuilder {
+
+private String name = "defaultName";   // 默认值
+
+    public static XXXBuilder create() {   // 将来修改，比new更容易兼容
+        return new XXXBuilder();
+    }
+
+    public XXXBuilder setName(String name) { // setXXX 符合Spring等框架约定
+        this.name = name;
+        return this;
+    }
+
+    public XX build() {
+        return new XX(name, .., .., .., .., ...);
+    }
+}
+
+#+END_SRC
+
+* 技巧 - server内部类无get/set
+#+BEGIN_SRC java
+public Config {
+
+    @JsonIgnore
+    public Integer id;  // table.id 用于更新 where id=?
+
+    public String name;
+    public String content;
+}
+#+END_SRC
+
+* 技巧 - Big Service
+#+BEGIN_SRC java
+@Service
+public CompositeService extends AbstractService implements A, B, C {
+
+    public Object methodOfA(Object input) {
+        jdbc.query("...");
+    }
+
+    public Object methodOfB(Object input) {
+        cache.get("..");
+    }
+
+    ...
+}
+
+    @Resource
+    A serviceA;
+
+#+END_SRC
+
+* 技巧 - 重复检查
+#+BEGIN_SRC java
+String name = (String) map.get("name");
+String address = (String) map.get("address");
+if (name == null)
+    throw xxx;
+    
+if (address == null)
+    throw yyy;
+
+protected T required(T value, String message) {
+    Preconditions.checkNotNull(value);
+    return value;
+}
+
+String name = required(map.get("name"));
+// service.get("name")
+// service.mustGet("name")
+#+END_SRC
+
+* 技巧 - return this
+#+BEGIN_SRC java
+Map param = new HashMap();
+param.put("name", name);
+param.put("age", age);
+
+execute(param);
+
+class Param<K, V> extends Map {
+    Param fill(K key, V value) {
+        put(key, value);
+        return this;
+    }
+}
+
+execute(new Param().fill("name" name).fill("age", age));
+#+END_SRC
+
+* 无状态
+- 数据不可变
